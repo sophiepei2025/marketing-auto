@@ -1,0 +1,22 @@
+[
+  {
+    "seq": "01",
+    "ep": "EP.01",
+    "cat": "KIRA INTERVIEW",
+    "up": "准备 Kira 面试前",
+    "down": "请先听我一句劝",
+    "action": "Kira 通关",
+    "color": "#E24B4A",
+    "footer": "苏苏留学 · 加拿大申请系列"
+  },
+  {
+    "seq": "02",
+    "ep": "EP.02",
+    "cat": "KIRA SCORING",
+    "up": "招生官看面试视频",
+    "down": "真的只看前 15 秒",
+    "action": "评分内幕",
+    "color": "#C0392B",
+    "footer": "苏苏留学 · 加拿大申请系列"
+  }
+]
