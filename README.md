@@ -1,6 +1,10 @@
-# 视频号 / 小红书 内容运营工具箱
+# marketing-auto — 内容运营自动化工具箱
 
 把「加拿大申请系列」这条内容线跑通后沉淀下来的可复用资产：**两个 WorkBuddy skill + 两个自动化工具 + 内容模板**。
+
+```bash
+git clone git@github.com:sophiepei2025/marketing-auto.git
+```
 
 ## 目录
 
@@ -91,3 +95,16 @@ python xhs_publish.py run
 
 登录态会写到 `~/cookies.json`，**重启服务免扫码**。
 注意：`check_login_status` 会驱动浏览器导航，长轮询会导致页面反复刷新 —— 检测登录请读 `~/cookies.json`。
+
+### 已知问题：publish_content 超时 panic
+
+v2.2.6 在发布图文时可能报 `context deadline exceeded`，堆栈落在
+`publish.go:144 mustClickPublishTab` —— 原因是 MCP 内置 Chromium 打开
+`creator.xiaohongshu.com/publish/publish` 后找不到「上传图文」标签页（5 分钟超时）。
+
+处置顺序：
+1. 确认 `~/cookies.json` 里 `web_session` / `access-token-creator` 齐全且 `saved_at` 是近期
+2. 用 `-headless=false` 起服务，在可见窗口里手动进一次发布页完成初始化（Cookie 落盘后无头也认）
+3. 单条试发（`xhs_publish.py run --limit 1`），成功后再跑全量
+
+不要用高频轮询去"探活"，每次 `check_login_status` 都会触发页面导航，把正在排队的发布页切走。
