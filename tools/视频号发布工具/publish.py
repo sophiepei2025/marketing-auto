@@ -47,7 +47,8 @@ CONTENT_FRAME_URL = "micro/content/post/create"  # 发布表单所在 iframe 的
 
 FIELD_MAP = {
     "video": ("视频文件", "video"),
-    "title": ("标题", "title"),
+    "cover": ("封面文件", "封面", "cover"),
+    "title": ("标题", "title", "视频描述", "描述"),
     "topic": ("话题", "topic"),
     "short_title": ("短标题", "short_title"),
     "publish_time": ("定时发布时间", "publish_time"),
@@ -364,8 +365,52 @@ def click_button_force(frame, texts, idx, label):
         return False
 
 
+def upload_cover(frame, cover_path, idx):
+    """在 iframe 内尝试上传自定义封面图片（Swiss 网格风格）。"""
+    if not cover_path or not cover_path.exists():
+        return False
+    try:
+        pause_video(frame)
+        btn = None
+        for txt in ["选择封面", "更换封面", "修改封面"]:
+            loc = frame.get_by_text(txt, exact=True).first
+            if loc.count() > 0:
+                btn = loc
+                break
+        if not btn:
+            loc = frame.locator('.cover-wrap, .poster-wrap, [class*="cover-preview"], [class*="cover-box"]').first
+            if loc.count() > 0:
+                btn = loc
+
+        if btn:
+            btn.scroll_into_view_if_needed()
+            btn.click(force=True)
+            frame.wait_for_timeout(1500)
+
+            # 在弹窗中切换到“上传图片”
+            tab = frame.get_by_text("上传图片", exact=True).first
+            if tab.count() > 0:
+                tab.click(force=True)
+                frame.wait_for_timeout(1000)
+
+            img_input = frame.locator('input[type="file"][accept*="image"]').first
+            if img_input.count() > 0:
+                img_input.set_input_files(str(cover_path))
+                frame.wait_for_timeout(2000)
+                confirm = frame.locator('button:has-text("确定"), button:has-text("完成"), button:has-text("确认")').first
+                if confirm.count() > 0:
+                    confirm.click(force=True)
+                    frame.wait_for_timeout(1500)
+                logging.info("[%s] 已上传自定义封面: %s", idx, cover_path.name)
+                return True
+    except Exception as e:
+        logging.warning("[%s] 自动设置封面异常: %s（可在草稿箱人工确认）", idx, e)
+    return False
+
+
 def publish_one(page, row, dry_run, idx):
     video = row.get("_video", "")
+    cover = row.get("_cover", "")
     title = row.get("_title", "")
     topic = row.get("_topic", "")
     short_title = row.get("_short_title", "")
@@ -375,6 +420,15 @@ def publish_one(page, row, dry_run, idx):
     if not video_path.exists():
         logging.warning("[%s] 视频文件不存在: %s", idx, video_path)
         return False
+
+    cover_path = None
+    if cover:
+        p1 = BASE / cover
+        p2 = BASE / "covers" / Path(cover).name
+        if p1.exists():
+            cover_path = p1
+        elif p2.exists():
+            cover_path = p2
 
     logging.info("[%s] 开始发布: %s", idx, video)
 
@@ -441,6 +495,10 @@ def publish_one(page, row, dry_run, idx):
     n = pause_video(frame)
     frame.wait_for_timeout(800)
     logging.info("[%s] 已暂停 iframe 内自动播放视频（%d 个）", idx, n)
+
+    # 封面设置（若排期表指定了 Swiss 封面文件）
+    if cover_path and cover_path.exists():
+        upload_cover(frame, cover_path, idx)
 
     # 填描述
     text = f"{title}\n{topic}" if (title and topic) else (title or topic)
