@@ -98,17 +98,20 @@ python publish.py publish --csv ../视频号排期表_xxx.csv
 这一节是整个流程最贵的部分，别自己重排：
 
 ```
-1. goto POST_URL            ← 直接进发布页，别从首页点
-2. 等描述框可见             ← 上传前它就在，先定位
-3. 等 file input attached   ← SPA 异步渲染，state=attached 不是 visible
-4. set_input_files          ← 提交上传
-5. 等「保存草稿」按钮解禁    ← 等转码，2–4 分钟，正常
-6. 填描述 = 标题 + 换行 + 话题
-7. 填短标题
-8. 合集（折叠→通常跳过）
-9. 声明原创 → 点「同意」
-10. 截图留证
-11. 点「保存草稿」           ← HITL 终点
+1. page = ctx.new_page()       ← 每条视频独立标签页，防 net::ERR_ABORTED
+2. goto POST_URL              ← 直接进发布页，别从首页点
+3. 获取 content iframe         ← micro/content/post/create 微前端容器
+4. 等 file input attached     ← SPA 异步渲染，state=attached 不是 visible
+5. set_input_files            ← 提交上传
+6. 等「保存草稿」按钮解禁      ← 等转码，通常几秒到 2 分钟
+7. pause_video(frame)         ← 暂停并静音所有 iframe 内 autoplay 视频，释放焦点
+8. 填描述 = 标题 + 换行 + 话题  ← JS 原型属性注入，绕过遮罩
+9. 填短标题                   ← 居中滚动后填入
+10. 合集（折叠→通常跳过）
+11. 声明原创 → 点「同意」       ← 居中滚动后点击
+12. 截图留证
+13. 点「保存草稿」             ← JS 居中滚动点击，HITL 终点
+14. page.close()              ← 关闭本页标签，释放内存与状态
 ```
 
 ## 5. 坑位速查（全部实战踩过）
@@ -116,12 +119,15 @@ python publish.py publish --csv ../视频号排期表_xxx.csv
 | 坑 | 现象 | 正解 |
 |---|---|---|
 | 首页无「发表」入口 | 脚本卡在"找不到发表入口" | 直接 `goto /platform/post/create` |
-| 表单不在 shadow DOM | 找不到任何 input | 表单在**主 document**（虽用了 wujie 微前端） |
+| 表单渲染在 iframe 内 | main frame 找不到描述框/按钮 | 切到 `micro/content/post/create` 的 `frame` 内操作 |
+| 视频自动播放遮罩 | 填表超时、点击被盖住 | 在 iframe 内 JS 暂停并静音所有 `<video>` |
+| 描述框点击被阻断 | click 30s 超时 | 使用 JS 原型描述符注入值与 dispatch input 事件 |
+| 连续发布 net::ERR_ABORTED | 第 2 条起 goto 立即报错 | 采用**独立标签页**：每条 `ctx.new_page()`，结束后 `page.close()` |
+| 按钮在视口下方不可见 | 保存草稿按钮点不动/查不到 | `scrollIntoView({block: 'center'})` 居中后点击 |
 | SPA 异步渲染 | `locator.count()==0` | 用 `wait_for(state="attached")`，别用固定 sleep |
-| 先上传后找描述框 | 上传后页面重渲染，描述框定位失效 | **先定位描述框，再上传** |
-| 转码很慢 | "保存草稿按钮长时间未就绪"警告 | 正常，2–4 分钟，别中途判失败 |
+| 转码很慢 | "保存草稿按钮长时间未就绪"警告 | 正常，通常几秒到 2 分钟，别中途判失败 |
 | 合集填不进去 | input 不可见 | 默认折叠，`is_visible()` 为 false 就跳过，人工补 |
-| 登录误判 | 28 秒就报"登录成功"但没扫码 | 用 cookie + URL + 头像三信号，别用文本 |
+| 登录误判 | 28 秒就报"登录成功"但没扫码 | 用 cookie + URL 两信号，别用文本 |
 | Playwright chromium 装不上 | broker denied delete / dirlock | 改用系统 Chrome：`channel="chrome"` |
 | 沙箱 mkdir 报 EEXIST | `PermissionError` | `if not path.exists(): path.mkdir(...)` |
 | 沙箱 `ps` 被拒 | permission denied | 用 `pgrep`/`lsof` 替代 |

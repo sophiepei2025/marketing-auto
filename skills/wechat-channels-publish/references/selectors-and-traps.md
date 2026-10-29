@@ -16,12 +16,12 @@
 
 | 元素 | 首选 | 备选 | 备注 |
 |------|------|------|------|
-| 描述框 | `[data-placeholder="添加描述"]` | `div.input-editor` → `[contenteditable]` | 在**主 document**，不在 shadow DOM |
-| 视频上传 | `input[type="file"][accept*="video"]` | `input[type="file"]` | 用 `wait_for(state="attached")` |
-| 短标题 | `input[placeholder*="短标题"]` | — | `fill()` 即可 |
+| 描述框 | `[data-placeholder="添加描述"]` | `div.input-editor` → `[contenteditable]` | 在 `micro/content/post/create` iframe 内，JS 注入优先 |
+| 视频上传 | `input[type="file"][accept*="video"]` | `input[type="file"]` | 用 `wait_for(state="attached")`，iframe/main frame 兼容 |
+| 短标题 | `input[placeholder*="短标题"]` | — | JS 注入或 `scroll_into_view_if_needed()` 后 `fill()` |
 | 合集 | `input[placeholder*="合集"]` | — | **默认折叠**，不可见就跳过 |
-| 原创声明 | `get_by_text("声明原创", exact=True)` | — | 点完要等弹「同意」 |
-| 保存草稿 | `button:has-text("保存草稿")` | — | disabled 类名 `weui-desktop-btn_disabled` |
+| 原创声明 | `get_by_text("声明原创", exact=True)` | JS 节点文本匹配 | 滚动至视口正中后点击，再等弹「同意」 |
+| 保存草稿 | `button:has-text("保存草稿")` | JS 按钮匹配 | 需滚动至居中可视区，或用 JS `b.click()` 触发 |
 | 发表 | `get_by_text("发表", exact=True)` | `button:has-text("发表")` | 仅 `--auto` 用 |
 | 头像/账号 | `[class*="avatar"]` `[class*="profile-img"]` `[class*="user-info"]` | — | 登录态信号之一 |
 
@@ -84,6 +84,16 @@ with sync_playwright() as p:
 - **现象**：先上传视频，再去找描述框 → 找不到
 - **诊断**：上传动作触发页面重渲染，之前拿到的 Locator 失效
 - **结论**：**先定位描述框，再上传**。顺序反了必翻车。
+
+### 第 5 轮：表单迁入微前端 iframe 与视频自动播放遮罩
+- **现象**：新版发布表单整体挂载在 `<iframe name="content">` 内（URL 含 `micro/content/post/create`），main frame 查不到描述框与按钮；同时视频上传后在 iframe 内自动播放（多个 `<video>` 元素），盖住输入焦点引发超时。
+- **诊断**：诊断脚本遍历 `page.frames`，发现真实表单在 `micro/content/post/create` 内，且 iframe 中渲染了多个 autoplay video。
+- **结论**：所有发布交互（输入框、原创声明、保存按钮）必须在 `frame` 内执行，并在填表前用 JS 暂停并静音所有 `<video>`（`pause()` + `muted = true` + `pointerEvents='none'`），且描述框使用 JS 原型属性描述符注入（`HTMLTextAreaElement/HTMLInputElement.prototype` 或 `innerText`）绕过遮罩。
+
+### 第 6 轮：同页面连续跳转引发 net::ERR_ABORTED
+- **现象**：批量发布时，第一条成功存为草稿，从第二条开始 `page.goto(POST_URL)` 报 `Page.goto: net::ERR_ABORTED`。
+- **诊断**：草稿保存后页面处于单页 SPA 内部状态，再次直接在同一 `page` 对象上调用 `goto` 相同 URL 遭到 Chromium 拦截中止。
+- **结论**：采用**独立标签页生命周期架构**，每条视频用 `page = ctx.new_page()` 单独处理，存完草稿在 `finally` 中执行 `page.close()`。彻底实现每条视频隔离，杜绝页面缓存与导航冲突。
 
 ## 时序参考（10 条视频实测）
 
